@@ -75,7 +75,7 @@ def test_release_workflow_covers_all_platforms():
     # All three publish channels must be present.
     assert "maturin upload" in text, "PyPI publish step missing"
     assert "napi prepublish" in text, "npm (node) publish step missing"
-    assert "wasm-pack publish" in text, "wasm publish step missing"
+    assert "npm publish" in text, "wasm (npm) publish step missing"
     assert "cargo publish" in text, "crates.io publish step missing"
     # Tokens must come from secrets, never be hardcoded.
     assert "secrets.PYPI_API_TOKEN" in text
