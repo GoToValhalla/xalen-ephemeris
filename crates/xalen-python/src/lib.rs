@@ -1,3 +1,8 @@
+// [Modified] Registers the `advanced` module's DE440/aspects/synastry/
+// transits/returns/progressions/vargas/dasha bindings in the `xalen`
+// pymodule init. Per Apache-2.0 Section 4(b), this notice states that this
+// file was changed from its original upstream form.
+
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyListMethods};
 
@@ -10,6 +15,7 @@ use xalen_vedic::nakshatra::Nakshatra;
 use xalen_vedic::panchang::compute_panchang;
 use xalen_vedic::rashi::Rashi;
 
+mod advanced;
 mod swe_compat;
 
 // ---------------------------------------------------------------------------
@@ -1046,6 +1052,11 @@ fn xalen(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sidereal_longitude, m)?)?;
     m.add_function(wrap_pyfunction!(houses_by_name, m)?)?;
     m.add_function(wrap_pyfunction!(ayanamsa_by_name, m)?)?;
+
+    // DE440 kernel control/status, aspects/synastry/transits, exact returns,
+    // secondary progressions, vargas, and Vimshottari dasha — all thin PyO3
+    // wrappers over existing Rust functions (see src/advanced.rs).
+    advanced::register(m)?;
 
     // `xalen.swe` — pyswisseph drop-in compatibility submodule. Registering it as
     // a child module AND in sys.modules lets `import xalen.swe as swe` work as a
