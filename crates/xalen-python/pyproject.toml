@@ -50,9 +50,11 @@ bindings = "pyo3"
 # installs from source.
 # Ship the hand-written type stubs + PEP 561 marker so pyswisseph/native users
 # get autocomplete and mypy checking. `xalen.pyi` types the top-level extension
-# module; `xalen/swe.pyi` types the `xalen.swe` drop-in submodule.
+# module; `xalen_base.pyi` preserves the validated pre-enrichment API;
+# `xalen/swe.pyi` types the `xalen.swe` drop-in submodule.
 include = [
     { path = "xalen.pyi", format = "wheel" },
+    { path = "xalen_base.pyi", format = "wheel" },
     { path = "py.typed", format = "wheel" },
     { path = "xalen/swe.pyi", format = "wheel" },
     { path = "xalen/py.typed", format = "wheel" },
