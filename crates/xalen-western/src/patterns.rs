@@ -12,6 +12,13 @@ pub enum AspectPattern {
     MysticRectangle,
 }
 
+/// Canonical alias for [`AspectPattern`] (the pattern-type enum) used by the
+/// newer named-body API below ([`find_named_patterns`]). Same type, not a
+/// duplicate model — matches this package's naming convention of adapting to
+/// an existing XALEN-equivalent concept rather than introducing a second enum
+/// (see [`crate::aspects::AspectPhase`] for the same treatment of direction).
+pub type AspectPatternType = AspectPattern;
+
 pub fn detect_patterns(positions_deg: &[f64], orb: f64) -> Vec<(AspectPattern, Vec<usize>)> {
     let mut patterns = Vec::new();
     let n = positions_deg.len();
@@ -255,6 +262,480 @@ fn kite_order(pos: &[f64], trine: [usize; 3], tail: usize, orb: f64) -> Option<V
     }
 }
 
+// =============================================================================
+// Named-body pattern API (adapted from Anonyfox/celestine, MIT License,
+// commit 954d63315ec00d29ba4becaef3f6a101497946b7: src/aspects/patterns.ts).
+// See docs/THIRD_PARTY_SOURCES.md for full provenance.
+//
+// The index/flat-orb API above (`detect_patterns`) pre-dates this package and
+// is unchanged. This section adds a richer, named-body counterpart that
+// operates on already-computed `AspectResult`s (from
+// `crate::aspects::find_all_aspects_ex`) — matching how celestine's own
+// pattern detectors consume a pre-computed aspect list rather than raw
+// positions, so per-aspect-type orbs, strength, and applying/separating are
+// already baked into what "counts" as e.g. a square or a trine. Ported to
+// idiomatic Rust, not transliterated line-for-line.
+// =============================================================================
+
+use crate::aspects::{AspectResult, AspectType};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A detected pattern with full body names and the contributing
+/// [`AspectResult`]s — the named-body counterpart to the `(AspectPattern,
+/// Vec<usize>)` pairs [`detect_patterns`] returns.
+pub struct AspectPatternMatch {
+    pub pattern_type: AspectPatternType,
+    pub bodies: Vec<String>,
+    /// The [`AspectResult`]s that make up this pattern.
+    pub aspects: Vec<AspectResult>,
+    pub description: String,
+}
+
+fn find_between<'a>(
+    aspects: &'a [AspectResult],
+    aspect_type: AspectType,
+    body1: &str,
+    body2: &str,
+) -> Option<&'a AspectResult> {
+    aspects.iter().find(|a| {
+        a.aspect_type == aspect_type
+            && ((a.body1 == body1 && a.body2 == body2) || (a.body1 == body2 && a.body2 == body1))
+    })
+}
+
+fn of_type(aspects: &[AspectResult], aspect_type: AspectType) -> Vec<&AspectResult> {
+    aspects
+        .iter()
+        .filter(|a| a.aspect_type == aspect_type)
+        .collect()
+}
+
+fn other_body<'a>(aspect: &'a AspectResult, known: &str) -> &'a str {
+    if aspect.body1 == known {
+        &aspect.body2
+    } else {
+        &aspect.body1
+    }
+}
+
+fn sorted_bodies(bodies: &[&str]) -> Vec<String> {
+    let mut v: Vec<String> = bodies.iter().map(|s| s.to_string()).collect();
+    v.sort();
+    v
+}
+
+/// Detect T-Square patterns: an opposition with a common square-apex from
+/// both ends. Named-body counterpart to the index-based detection embedded
+/// in [`detect_patterns`].
+pub fn detect_t_square_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let oppositions = of_type(aspects, AspectType::Opposition);
+    let squares = of_type(aspects, AspectType::Square);
+    let mut seen: Vec<Vec<String>> = Vec::new();
+
+    for opp in &oppositions {
+        let squares_from_1: Vec<&&AspectResult> = squares
+            .iter()
+            .filter(|sq| sq.body1 == opp.body1 || sq.body2 == opp.body1)
+            .collect();
+        let squares_from_2: Vec<&&AspectResult> = squares
+            .iter()
+            .filter(|sq| sq.body1 == opp.body2 || sq.body2 == opp.body2)
+            .collect();
+
+        for sq1 in &squares_from_1 {
+            let apex1 = other_body(sq1, &opp.body1);
+            for sq2 in &squares_from_2 {
+                let apex2 = other_body(sq2, &opp.body2);
+                if apex1 == apex2 && apex1 != opp.body1 && apex1 != opp.body2 {
+                    let bodies = sorted_bodies(&[&opp.body1, &opp.body2, apex1]);
+                    if seen.contains(&bodies) {
+                        continue;
+                    }
+                    seen.push(bodies.clone());
+                    patterns.push(AspectPatternMatch {
+                        pattern_type: AspectPatternType::TSquare,
+                        bodies: vec![opp.body1.clone(), opp.body2.clone(), apex1.to_string()],
+                        aspects: vec![(*opp).clone(), (**sq1).clone(), (**sq2).clone()],
+                        description: format!(
+                            "T-Square with {apex1} as apex, {}-{} opposition",
+                            opp.body1, opp.body2
+                        ),
+                    });
+                }
+            }
+        }
+    }
+    patterns
+}
+
+/// Detect Grand Trine patterns: 3 bodies mutually trine.
+pub fn detect_grand_trine_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let trines = of_type(aspects, AspectType::Trine);
+    if trines.len() < 3 {
+        return patterns;
+    }
+
+    let mut bodies: Vec<String> = Vec::new();
+    for t in &trines {
+        if !bodies.contains(&t.body1) {
+            bodies.push(t.body1.clone());
+        }
+        if !bodies.contains(&t.body2) {
+            bodies.push(t.body2.clone());
+        }
+    }
+
+    for i in 0..bodies.len() {
+        for j in (i + 1)..bodies.len() {
+            for k in (j + 1)..bodies.len() {
+                let (a, b, c) = (&bodies[i], &bodies[j], &bodies[k]);
+                let ab = find_between(aspects, AspectType::Trine, a, b);
+                let bc = find_between(aspects, AspectType::Trine, b, c);
+                let ac = find_between(aspects, AspectType::Trine, a, c);
+                if let (Some(ab), Some(bc), Some(ac)) = (ab, bc, ac) {
+                    patterns.push(AspectPatternMatch {
+                        pattern_type: AspectPatternType::GrandTrine,
+                        bodies: vec![a.clone(), b.clone(), c.clone()],
+                        aspects: vec![ab.clone(), bc.clone(), ac.clone()],
+                        description: format!("Grand Trine: {a}, {b}, {c}"),
+                    });
+                }
+            }
+        }
+    }
+    patterns
+}
+
+/// Detect Grand Cross patterns: 2 non-overlapping oppositions with all 4
+/// adjacent pairs squared.
+pub fn detect_grand_cross_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let squares = of_type(aspects, AspectType::Square);
+    let oppositions = of_type(aspects, AspectType::Opposition);
+    if squares.len() < 4 || oppositions.len() < 2 {
+        return patterns;
+    }
+
+    for i in 0..oppositions.len() {
+        for j in (i + 1)..oppositions.len() {
+            let (opp1, opp2) = (oppositions[i], oppositions[j]);
+            let shares_body = opp1.body1 == opp2.body1
+                || opp1.body1 == opp2.body2
+                || opp1.body2 == opp2.body1
+                || opp1.body2 == opp2.body2;
+            if shares_body {
+                continue;
+            }
+
+            let all_bodies = [
+                opp1.body1.clone(),
+                opp1.body2.clone(),
+                opp2.body1.clone(),
+                opp2.body2.clone(),
+            ];
+
+            let sq1 = find_between(aspects, AspectType::Square, &opp1.body1, &opp2.body1);
+            let sq2 = find_between(aspects, AspectType::Square, &opp1.body1, &opp2.body2);
+            let sq3 = find_between(aspects, AspectType::Square, &opp1.body2, &opp2.body1);
+            let sq4 = find_between(aspects, AspectType::Square, &opp1.body2, &opp2.body2);
+
+            if let (Some(sq1), Some(sq2), Some(sq3), Some(sq4)) = (sq1, sq2, sq3, sq4) {
+                patterns.push(AspectPatternMatch {
+                    pattern_type: AspectPatternType::GrandCross,
+                    bodies: all_bodies.to_vec(),
+                    aspects: vec![
+                        opp1.clone(),
+                        opp2.clone(),
+                        sq1.clone(),
+                        sq2.clone(),
+                        sq3.clone(),
+                        sq4.clone(),
+                    ],
+                    description: format!("Grand Cross: {}", all_bodies.join(", ")),
+                });
+            }
+        }
+    }
+    patterns
+}
+
+/// Detect Yod ("Finger of God") patterns: a sextile base with a common
+/// quincunx apex.
+pub fn detect_yod_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let sextiles = of_type(aspects, AspectType::Sextile);
+    let quincunxes = of_type(aspects, AspectType::Quincunx);
+    if sextiles.is_empty() || quincunxes.len() < 2 {
+        return patterns;
+    }
+
+    let mut seen: Vec<Vec<String>> = Vec::new();
+    for sextile in &sextiles {
+        let q_from_1: Vec<&&AspectResult> = quincunxes
+            .iter()
+            .filter(|q| q.body1 == sextile.body1 || q.body2 == sextile.body1)
+            .collect();
+        let q_from_2: Vec<&&AspectResult> = quincunxes
+            .iter()
+            .filter(|q| q.body1 == sextile.body2 || q.body2 == sextile.body2)
+            .collect();
+
+        for q1 in &q_from_1 {
+            let apex1 = other_body(q1, &sextile.body1);
+            for q2 in &q_from_2 {
+                let apex2 = other_body(q2, &sextile.body2);
+                if apex1 == apex2 && apex1 != sextile.body1 && apex1 != sextile.body2 {
+                    let bodies = sorted_bodies(&[&sextile.body1, &sextile.body2, apex1]);
+                    if seen.contains(&bodies) {
+                        continue;
+                    }
+                    seen.push(bodies);
+                    patterns.push(AspectPatternMatch {
+                        pattern_type: AspectPatternType::Yod,
+                        bodies: vec![
+                            sextile.body1.clone(),
+                            sextile.body2.clone(),
+                            apex1.to_string(),
+                        ],
+                        aspects: vec![(*sextile).clone(), (**q1).clone(), (**q2).clone()],
+                        description: format!("Yod with {apex1} as apex (Finger of God)"),
+                    });
+                }
+            }
+        }
+    }
+    patterns
+}
+
+/// Detect Kite patterns: a Grand Trine plus an opposition from one vertex to
+/// a 4th body, with sextiles from that 4th body to the other two vertices.
+pub fn detect_kite_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let grand_trines = detect_grand_trine_named(aspects);
+    let oppositions = of_type(aspects, AspectType::Opposition);
+
+    for gt in &grand_trines {
+        for vertex in &gt.bodies {
+            let opp = oppositions.iter().find(|o| {
+                let touches = o.body1 == *vertex || o.body2 == *vertex;
+                if !touches {
+                    return false;
+                }
+                let far_end = other_body(o, vertex);
+                !gt.bodies.contains(&far_end.to_string())
+            });
+            let Some(opp) = opp else { continue };
+
+            let fourth = other_body(opp, vertex).to_string();
+            let other_vertices: Vec<&String> = gt.bodies.iter().filter(|b| *b != vertex).collect();
+            if other_vertices.len() != 2 {
+                continue;
+            }
+
+            let sex1 = find_between(aspects, AspectType::Sextile, &fourth, other_vertices[0]);
+            let sex2 = find_between(aspects, AspectType::Sextile, &fourth, other_vertices[1]);
+
+            if let (Some(sex1), Some(sex2)) = (sex1, sex2) {
+                let mut bodies = gt.bodies.clone();
+                bodies.push(fourth.clone());
+                let mut pattern_aspects = gt.aspects.clone();
+                pattern_aspects.push((*opp).clone());
+                pattern_aspects.push(sex1.clone());
+                pattern_aspects.push(sex2.clone());
+                patterns.push(AspectPatternMatch {
+                    pattern_type: AspectPatternType::Kite,
+                    bodies,
+                    aspects: pattern_aspects,
+                    description: format!("Kite with {fourth} as tail, {vertex} opposite"),
+                });
+            }
+        }
+    }
+    patterns
+}
+
+/// Detect Mystic Rectangle patterns: 2 non-overlapping oppositions whose
+/// cross-pairs form 2 trines and 2 sextiles.
+pub fn detect_mystic_rectangle_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let oppositions = of_type(aspects, AspectType::Opposition);
+    let trines = of_type(aspects, AspectType::Trine);
+    let sextiles = of_type(aspects, AspectType::Sextile);
+    if oppositions.len() < 2 || trines.len() < 2 || sextiles.len() < 2 {
+        return patterns;
+    }
+
+    let mut seen: Vec<Vec<String>> = Vec::new();
+    for i in 0..oppositions.len() {
+        for j in (i + 1)..oppositions.len() {
+            let (opp1, opp2) = (oppositions[i], oppositions[j]);
+            let shares_body = opp1.body1 == opp2.body1
+                || opp1.body1 == opp2.body2
+                || opp1.body2 == opp2.body1
+                || opp1.body2 == opp2.body2;
+            if shares_body {
+                continue;
+            }
+
+            let all_bodies = [
+                opp1.body1.clone(),
+                opp1.body2.clone(),
+                opp2.body1.clone(),
+                opp2.body2.clone(),
+            ];
+
+            let trine_a1 = find_between(aspects, AspectType::Trine, &opp1.body1, &opp2.body1);
+            let trine_a2 = find_between(aspects, AspectType::Trine, &opp1.body2, &opp2.body2);
+            if let (Some(ta1), Some(ta2)) = (trine_a1, trine_a2) {
+                let sex1 = find_between(aspects, AspectType::Sextile, &opp1.body1, &opp2.body2);
+                let sex2 = find_between(aspects, AspectType::Sextile, &opp1.body2, &opp2.body1);
+                if let (Some(s1), Some(s2)) = (sex1, sex2) {
+                    let key =
+                        sorted_bodies(&all_bodies.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                    if !seen.contains(&key) {
+                        seen.push(key);
+                        patterns.push(AspectPatternMatch {
+                            pattern_type: AspectPatternType::MysticRectangle,
+                            bodies: all_bodies.to_vec(),
+                            aspects: vec![
+                                opp1.clone(),
+                                opp2.clone(),
+                                ta1.clone(),
+                                ta2.clone(),
+                                s1.clone(),
+                                s2.clone(),
+                            ],
+                            description: format!("Mystic Rectangle: {}", all_bodies.join(", ")),
+                        });
+                    }
+                }
+            }
+
+            let trine_b1 = find_between(aspects, AspectType::Trine, &opp1.body1, &opp2.body2);
+            let trine_b2 = find_between(aspects, AspectType::Trine, &opp1.body2, &opp2.body1);
+            if let (Some(tb1), Some(tb2)) = (trine_b1, trine_b2) {
+                let sex1 = find_between(aspects, AspectType::Sextile, &opp1.body1, &opp2.body1);
+                let sex2 = find_between(aspects, AspectType::Sextile, &opp1.body2, &opp2.body2);
+                if let (Some(s1), Some(s2)) = (sex1, sex2) {
+                    let key =
+                        sorted_bodies(&all_bodies.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                    if !seen.contains(&key) {
+                        seen.push(key);
+                        patterns.push(AspectPatternMatch {
+                            pattern_type: AspectPatternType::MysticRectangle,
+                            bodies: all_bodies.to_vec(),
+                            aspects: vec![
+                                opp1.clone(),
+                                opp2.clone(),
+                                tb1.clone(),
+                                tb2.clone(),
+                                s1.clone(),
+                                s2.clone(),
+                            ],
+                            description: format!("Mystic Rectangle: {}", all_bodies.join(", ")),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    patterns
+}
+
+/// Detect Stellium patterns: connected components of 3+ bodies all in mutual
+/// conjunction.
+pub fn detect_stellium_named(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    let conjunctions = of_type(aspects, AspectType::Conjunction);
+    if conjunctions.len() < 2 {
+        return patterns;
+    }
+
+    let mut adjacency: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for c in &conjunctions {
+        adjacency
+            .entry(c.body1.clone())
+            .or_default()
+            .push(c.body2.clone());
+        adjacency
+            .entry(c.body2.clone())
+            .or_default()
+            .push(c.body1.clone());
+    }
+
+    let mut visited = std::collections::HashSet::new();
+    let mut components: Vec<Vec<String>> = Vec::new();
+    let mut node_order: Vec<&String> = adjacency.keys().collect();
+    node_order.sort(); // deterministic traversal regardless of HashMap iteration order
+
+    for start in node_order {
+        if visited.contains(start) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(start.clone());
+        while let Some(current) = queue.pop_front() {
+            if visited.contains(&current) {
+                continue;
+            }
+            visited.insert(current.clone());
+            component.push(current.clone());
+            if let Some(neighbors) = adjacency.get(&current) {
+                let mut sorted_neighbors = neighbors.clone();
+                sorted_neighbors.sort();
+                for n in sorted_neighbors {
+                    if !visited.contains(&n) {
+                        queue.push_back(n);
+                    }
+                }
+            }
+        }
+        if component.len() >= 3 {
+            components.push(component);
+        }
+    }
+
+    for component in components {
+        let relevant: Vec<AspectResult> = conjunctions
+            .iter()
+            .filter(|c| component.contains(&c.body1) && component.contains(&c.body2))
+            .map(|c| (*c).clone())
+            .collect();
+        let count = component.len();
+        patterns.push(AspectPatternMatch {
+            pattern_type: AspectPatternType::Stellium,
+            bodies: component.clone(),
+            aspects: relevant,
+            description: format!(
+                "Stellium: {count} planets conjunct ({})",
+                component.join(", ")
+            ),
+        });
+    }
+    patterns
+}
+
+/// Find all named-body aspect patterns among the given [`AspectResult`]s, in
+/// order of rarity: Grand Cross, Kite, Mystic Rectangle, Grand Trine,
+/// T-Square, Yod, Stellium — the same dispatch order as celestine's
+/// `findPatterns`. This is the named-body counterpart to [`detect_patterns`];
+/// both are available and neither is deprecated.
+pub fn find_named_patterns(aspects: &[AspectResult]) -> Vec<AspectPatternMatch> {
+    let mut patterns = Vec::new();
+    patterns.extend(detect_grand_cross_named(aspects));
+    patterns.extend(detect_kite_named(aspects));
+    patterns.extend(detect_mystic_rectangle_named(aspects));
+    patterns.extend(detect_grand_trine_named(aspects));
+    patterns.extend(detect_t_square_named(aspects));
+    patterns.extend(detect_yod_named(aspects));
+    patterns.extend(detect_stellium_named(aspects));
+    patterns
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,5 +934,219 @@ mod tests {
             p,
             AspectPattern::GrandCross | AspectPattern::Kite | AspectPattern::MysticRectangle
         )));
+    }
+
+    // -------------------------------------------------------------------
+    // Named-body API tests, ported/adapted from Anonyfox/celestine (MIT),
+    // commit 954d63315ec00d29ba4becaef3f6a101497946b7:
+    //   src/aspects/patterns.test.ts (PERFECT_* fixtures + JPL J2000.0 set)
+    // See docs/THIRD_PARTY_SOURCES.md.
+    // -------------------------------------------------------------------
+
+    use crate::aspects::{AspectConfig, AspectType, find_all_aspects_ex};
+
+    fn aspects_for(bodies: &[(&str, f64)]) -> Vec<AspectResult> {
+        let positions: Vec<(String, f64, Option<f64>)> = bodies
+            .iter()
+            .map(|(n, lon)| (n.to_string(), *lon, None))
+            .collect();
+        let config = AspectConfig::default().with_aspect_types(AspectType::ALL_14);
+        find_all_aspects_ex(&positions, &config)
+    }
+
+    #[test]
+    fn named_t_square_positive() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 180.0), ("C", 90.0)]);
+        let patterns = detect_t_square_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0].pattern_type, AspectPatternType::TSquare);
+        let mut bodies = patterns[0].bodies.clone();
+        bodies.sort();
+        assert_eq!(bodies, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn named_t_square_negative_without_opposition() {
+        let aspects = aspects_for(&[("A", 0.0), ("C", 90.0)]);
+        assert!(detect_t_square_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_grand_trine_positive() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 120.0), ("C", 240.0)]);
+        let patterns = detect_grand_trine_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        assert!(
+            patterns[0]
+                .aspects
+                .iter()
+                .all(|a| a.aspect_type == AspectType::Trine)
+        );
+    }
+
+    #[test]
+    fn named_grand_trine_negative_only_two_trines() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 120.0), ("C", 250.0)]);
+        assert!(detect_grand_trine_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_grand_cross_positive() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 90.0), ("C", 180.0), ("D", 270.0)]);
+        let patterns = detect_grand_cross_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        let squares = patterns[0]
+            .aspects
+            .iter()
+            .filter(|a| a.aspect_type == AspectType::Square)
+            .count();
+        let oppositions = patterns[0]
+            .aspects
+            .iter()
+            .filter(|a| a.aspect_type == AspectType::Opposition)
+            .count();
+        assert_eq!((squares, oppositions), (4, 2));
+    }
+
+    #[test]
+    fn named_grand_cross_negative_missing_one_square() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 90.0), ("C", 180.0), ("D", 250.0)]);
+        assert!(detect_grand_cross_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_yod_positive() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 60.0), ("C", 210.0)]);
+        let patterns = detect_yod_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        let quincunxes = patterns[0]
+            .aspects
+            .iter()
+            .filter(|a| a.aspect_type == AspectType::Quincunx)
+            .count();
+        assert_eq!(quincunxes, 2);
+    }
+
+    #[test]
+    fn named_yod_near_miss() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 60.0), ("C", 215.0)]);
+        assert!(detect_yod_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_kite_positive() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 120.0), ("C", 240.0), ("D", 180.0)]);
+        let patterns = detect_kite_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0].bodies.len(), 4);
+    }
+
+    #[test]
+    fn named_kite_near_miss_no_opposition() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 120.0), ("C", 240.0), ("D", 150.0)]);
+        assert!(detect_kite_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_mystic_rectangle_positive() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 60.0), ("C", 180.0), ("D", 240.0)]);
+        let patterns = detect_mystic_rectangle_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        let opps = patterns[0]
+            .aspects
+            .iter()
+            .filter(|a| a.aspect_type == AspectType::Opposition)
+            .count();
+        let trines = patterns[0]
+            .aspects
+            .iter()
+            .filter(|a| a.aspect_type == AspectType::Trine)
+            .count();
+        let sextiles = patterns[0]
+            .aspects
+            .iter()
+            .filter(|a| a.aspect_type == AspectType::Sextile)
+            .count();
+        assert_eq!((opps, trines, sextiles), (2, 2, 2));
+    }
+
+    #[test]
+    fn named_mystic_rectangle_negative_missing_sextile() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 60.0), ("C", 180.0), ("D", 220.0)]);
+        assert!(detect_mystic_rectangle_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_stellium_positive_four_bodies() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 5.0), ("C", 8.0), ("D", 3.0)]);
+        let patterns = detect_stellium_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0].bodies.len(), 4);
+    }
+
+    #[test]
+    fn named_stellium_negative_only_two_bodies() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 5.0)]);
+        assert!(detect_stellium_named(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_stellium_minimum_three_bodies() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 5.0), ("C", 8.0)]);
+        let patterns = detect_stellium_named(&aspects);
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0].bodies.len(), 3);
+    }
+
+    #[test]
+    fn named_find_patterns_empty_for_no_pattern() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 5.0)]);
+        assert!(find_named_patterns(&aspects).is_empty());
+    }
+
+    #[test]
+    fn named_find_patterns_detects_grand_trine_in_isolation() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 120.0), ("C", 240.0)]);
+        let patterns = find_named_patterns(&aspects);
+        assert!(
+            patterns
+                .iter()
+                .any(|p| p.pattern_type == AspectPatternType::GrandTrine)
+        );
+    }
+
+    #[test]
+    fn named_grand_trine_across_0_360_boundary() {
+        let aspects = aspects_for(&[("A", 350.0), ("B", 110.0), ("C", 230.0)]);
+        let patterns = detect_grand_trine_named(&aspects);
+        assert_eq!(
+            patterns.len(),
+            1,
+            "Grand Trine must be detected even when a vertex is near 0/360"
+        );
+    }
+
+    #[test]
+    fn named_no_duplicate_patterns_for_same_body_set() {
+        let aspects = aspects_for(&[("A", 0.0), ("B", 120.0), ("C", 240.0)]);
+        assert_eq!(detect_grand_trine_named(&aspects).len(), 1);
+    }
+
+    #[test]
+    fn named_j2000_real_data_does_not_panic() {
+        let bodies: &[(&str, f64)] = &[
+            ("Sun", 280.3689092),
+            ("Moon", 223.323786),
+            ("Mercury", 271.8892699),
+            ("Venus", 241.5657794),
+            ("Mars", 327.9632921),
+            ("Jupiter", 25.2530685),
+            ("Saturn", 40.3956366),
+            ("Uranus", 314.809168),
+            ("Neptune", 303.1930003),
+            ("Pluto", 251.4547644),
+        ];
+        let aspects = aspects_for(bodies);
+        let _patterns = find_named_patterns(&aspects);
     }
 }

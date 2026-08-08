@@ -70,8 +70,12 @@ pub fn davison_midpoint(
     lon_b: f64,
 ) -> Result<DavisonMidpoint, String> {
     for (name, value) in [
-        ("jd_a", jd_a), ("lat_a", lat_a), ("lon_a", lon_a),
-        ("jd_b", jd_b), ("lat_b", lat_b), ("lon_b", lon_b),
+        ("jd_a", jd_a),
+        ("lat_a", lat_a),
+        ("lon_a", lon_a),
+        ("jd_b", jd_b),
+        ("lat_b", lat_b),
+        ("lon_b", lon_b),
     ] {
         if !value.is_finite() {
             return Err(format!("{name} must be finite"));
@@ -85,7 +89,11 @@ pub fn davison_midpoint(
     }
 
     let lon_mid_360 = circular_midpoint_deg(lon_a.rem_euclid(360.0), lon_b.rem_euclid(360.0));
-    let lon_signed = if lon_mid_360 > 180.0 { lon_mid_360 - 360.0 } else { lon_mid_360 };
+    let lon_signed = if lon_mid_360 > 180.0 {
+        lon_mid_360 - 360.0
+    } else {
+        lon_mid_360
+    };
     Ok(DavisonMidpoint {
         jd: (jd_a + jd_b) / 2.0,
         latitude_deg: (lat_a + lat_b) / 2.0,

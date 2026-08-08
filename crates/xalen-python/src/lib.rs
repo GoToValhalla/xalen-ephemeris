@@ -16,6 +16,7 @@ use xalen_vedic::panchang::compute_panchang;
 use xalen_vedic::rashi::Rashi;
 
 mod advanced;
+mod aspect_engine;
 mod swe_compat;
 
 // ---------------------------------------------------------------------------
@@ -1057,6 +1058,12 @@ fn xalen(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // secondary progressions, vargas, and Vimshottari dasha — all thin PyO3
     // wrappers over existing Rust functions (see src/advanced.rs).
     advanced::register(m)?;
+
+    // Configurable-orb aspect engine (all 14 aspect types, orb overrides,
+    // strength, phase, out-of-sign) and pattern detection — additive
+    // alongside advanced::aspects/synastry/transits, which are unchanged.
+    // See src/aspect_engine.rs.
+    aspect_engine::register(m)?;
 
     // `xalen.swe` — pyswisseph drop-in compatibility submodule. Registering it as
     // a child module AND in sys.modules lets `import xalen.swe as swe` work as a

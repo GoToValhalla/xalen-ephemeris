@@ -40,3 +40,54 @@ def sign_ingresses(body_id: int, jd_start: float, jd_end: float, step_days: floa
 def stations(body_id: int, jd_start: float, jd_end: float, step_days: float = ...) -> List[Dict[str, Any]]: ...
 def solar_eclipses(jd_start: float, jd_end: float) -> List[Dict[str, Any]]: ...
 def lunar_eclipses(jd_start: float, jd_end: float) -> List[Dict[str, Any]]: ...
+
+# ---------------------------------------------------------------------------
+# Configurable-orb aspect engine + pattern detection (src/aspect_engine.rs).
+# All 14 aspect types (major, minor, Kepler), configurable per-type orbs,
+# strength, applying/separating/exact phase, out-of-sign detection, and the
+# 7 aspect patterns (T-Square, Grand Trine, Grand Cross, Yod, Kite, Mystic
+# Rectangle, Stellium). Additive alongside `aspects`/`synastry`/`transits`
+# in xalen_base.pyi, which are unchanged.
+# ---------------------------------------------------------------------------
+
+def aspects_ex(
+    positions: Dict[str, tuple[float, float | None]],
+    aspect_types: List[str] | None = ...,
+    orbs: Dict[str, float] | None = ...,
+    include_out_of_sign: bool | None = ...,
+    exclude_out_of_sign: bool | None = ...,
+    out_of_sign_penalty: float | None = ...,
+    minimum_strength: float | None = ...,
+    include_applying: bool | None = ...,
+) -> List[Dict[str, Any]]:
+    """Configurable-orb aspect detection across all 14 aspect types.
+
+    positions: {name: (longitude_deg, speed_deg_per_day_or_None)}.
+    aspect_types: names from `aspect_type_names()`; default = the 5 Ptolemaic
+    majors (same default as `aspects()`). orbs: per-type overrides in
+    degrees, keyed by the same names.
+
+    Returns a list of {"body1", "body2", "aspect_type", "angle_deg",
+    "separation_deg", "deviation_deg", "orb_deg", "strength", "phase",
+    "is_out_of_sign", "is_major", "is_kepler"}. "phase" is one of
+    "applying"/"separating"/"exact"/None.
+    """
+    ...
+
+def aspect_type_names() -> List[str]:
+    """The 14 aspect-type name strings accepted by `aspects_ex`/`aspect_patterns`."""
+    ...
+
+def aspect_patterns(
+    positions: Dict[str, tuple[float, float | None]],
+    aspect_types: List[str] | None = ...,
+    orbs: Dict[str, float] | None = ...,
+) -> List[Dict[str, Any]]:
+    """Detect T-Square/Grand Trine/Grand Cross/Yod/Kite/Mystic Rectangle/
+    Stellium patterns among the given positions. aspect_types defaults to
+    all 14 types (patterns need minor aspects like quincunx/sextile).
+
+    Returns a list of {"pattern_type", "bodies", "description", "aspects"}
+    where "aspects" is a list of dicts shaped like `aspects_ex`'s output.
+    """
+    ...
