@@ -5,8 +5,13 @@
 //! `vedic_extra` and `presentation` extend that surface without changing the
 //! top-level `lib.rs` registration contract (`advanced::register`).
 
+// The original validated advanced binding file predates the repository's
+// current rustfmt output. Keep it byte-identical while we compose it here.
+#[rustfmt::skip]
 mod core;
+#[rustfmt::skip]
 mod presentation;
+#[rustfmt::skip]
 mod vedic_extra;
 
 use pyo3::prelude::*;
