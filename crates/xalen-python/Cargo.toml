@@ -39,6 +39,7 @@ xalen-stars = { version = "0.6.0", path = "../xalen-stars", default-features = f
 xalen-western = { version = "0.6.0", path = "../xalen-western", default-features = false }
 xalen-numerology = { version = "0.6.0", path = "../xalen-numerology" }
 xalen-coords = { version = "0.6.0", path = "../xalen-coords" }
+xalen-chart = { version = "0.6.0", path = "../xalen-chart" }
 
 [features]
 # Default-on passthrough for the non-commercial Hipparcos fixed-star catalog.
