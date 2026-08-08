@@ -14,9 +14,6 @@
 
 //! Thin PyO3 bindings for mature Vedic calculations already implemented in
 //! `xalen-vedic`. No Jyotish mathematics is reimplemented here.
-//!
-//! Validation/reference sources used by the Tarot project for cross-checking
-//! these capabilities are recorded in `docs/THIRD_PARTY_SOURCES.md`.
 
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
@@ -95,10 +92,23 @@ fn rashi_from_index(index: usize) -> PyResult<Rashi> {
     Ok(Rashi::from_longitude_deg(index as f64 * 30.0))
 }
 
+fn canonical_planet_name(name: &str) -> PyResult<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "sun" => Ok("Sun"),
+        "moon" => Ok("Moon"),
+        "mars" => Ok("Mars"),
+        "mercury" => Ok("Mercury"),
+        "jupiter" => Ok("Jupiter"),
+        "venus" => Ok("Venus"),
+        "saturn" => Ok("Saturn"),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unsupported Shadbala planet '{other}'; expected Sun, Moon, Mars, Mercury, Jupiter, Venus, or Saturn"
+        ))),
+    }
+}
+
 /// Full Ashtakavarga from sign indices.
-///
-/// `planet_signs` must be exactly 9 zero-based signs in this order:
-/// Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Lagna.
+/// `planet_signs`: Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Lagna.
 #[pyfunction]
 fn ashtakavarga(py: Python<'_>, planet_signs: Vec<usize>) -> PyResult<Py<PyAny>> {
     if planet_signs.len() != 9 {
@@ -125,7 +135,6 @@ fn ashtakavarga(py: Python<'_>, planet_signs: Vec<usize>) -> PyResult<Py<PyAny>>
     Ok(d.into())
 }
 
-/// Ashtottari (108-year) Mahadasha sequence.
 #[pyfunction]
 fn ashtottari_dasha(py: Python<'_>, moon_sidereal_deg: f64, birth_jd: f64) -> PyResult<Py<PyAny>> {
     crate::check_jd(birth_jd)?;
@@ -135,7 +144,6 @@ fn ashtottari_dasha(py: Python<'_>, moon_sidereal_deg: f64, birth_jd: f64) -> Py
     dasha_list(py, &core_ashtottari_dasha(moon_sidereal_deg, birth_jd))
 }
 
-/// Yogini (36-year) Mahadasha sequence.
 #[pyfunction]
 fn yogini_dasha(py: Python<'_>, moon_sidereal_deg: f64, birth_jd: f64) -> PyResult<Py<PyAny>> {
     crate::check_jd(birth_jd)?;
@@ -145,7 +153,6 @@ fn yogini_dasha(py: Python<'_>, moon_sidereal_deg: f64, birth_jd: f64) -> PyResu
     dasha_list(py, &core_yogini_dasha(moon_sidereal_deg, birth_jd))
 }
 
-/// Full Ashtakoota/Guna Milan score (maximum 36).
 #[pyfunction]
 fn ashtakoota(
     py: Python<'_>,
@@ -176,9 +183,6 @@ fn ashtakoota(
     Ok(d.into())
 }
 
-/// Full six-fold Shadbala over the existing BPHS-oriented XALEN core.
-///
-/// `all_planets` items are `(name, sidereal_longitude_deg, speed_deg_per_day)`.
 #[pyfunction]
 #[pyo3(signature = (planet, lon_deg, house, speed, jd, sun_lon, moon_lon, day_fraction, all_planets))]
 #[allow(clippy::too_many_arguments)]
@@ -203,14 +207,14 @@ fn shadbala(
             "day_fraction must be finite and in 0..=1",
         ));
     }
-    let core_positions: Vec<PlanetPosition> = all_planets
-        .iter()
-        .map(|(name, longitude, pspeed)| PlanetPosition {
-            name: Box::leak(name.clone().into_boxed_str()),
+    let mut core_positions = Vec::with_capacity(all_planets.len());
+    for (name, longitude, pspeed) in &all_planets {
+        core_positions.push(PlanetPosition {
+            name: canonical_planet_name(name)?,
             longitude: *longitude,
             speed: *pspeed,
-        })
-        .collect();
+        });
+    }
     let input = ShadBalaInput {
         jd,
         sun_lon,
@@ -218,6 +222,7 @@ fn shadbala(
         day_fraction,
         all_planets: core_positions,
     };
+    let planet = canonical_planet_name(planet)?;
     let s = Shadbala::compute_full(planet, lon_deg, house, speed, &input);
     let d = PyDict::new(py);
     let sthana = PyDict::new(py);
@@ -280,8 +285,7 @@ fn kaal_sarpa_dosha(
     ketu_house: usize,
     planet_houses: Vec<usize>,
 ) -> PyResult<Py<PyAny>> {
-    let d = detect_kaal_sarpa(rahu_house, ketu_house, &planet_houses);
-    dosha_to_dict(py, &d)
+    dosha_to_dict(py, &detect_kaal_sarpa(rahu_house, ketu_house, &planet_houses))
 }
 
 #[pyfunction]
@@ -293,14 +297,16 @@ fn pitra_dosha(
     ninth_lord_house: usize,
     ninth_lord_debilitated: bool,
 ) -> PyResult<Py<PyAny>> {
-    let d = detect_pitra_dosha(
-        sun_house,
-        saturn_house,
-        rahu_house,
-        ninth_lord_house,
-        ninth_lord_debilitated,
-    );
-    dosha_to_dict(py, &d)
+    dosha_to_dict(
+        py,
+        &detect_pitra_dosha(
+            sun_house,
+            saturn_house,
+            rahu_house,
+            ninth_lord_house,
+            ninth_lord_debilitated,
+        ),
+    )
 }
 
 #[pyfunction]
@@ -317,14 +323,22 @@ fn pancha_mahapurusha_yoga(
 }
 
 #[pyfunction]
-fn gajakesari_yoga(py: Python<'_>, jupiter_house: usize, moon_house: usize) -> PyResult<Option<Py<PyAny>>> {
+fn gajakesari_yoga(
+    py: Python<'_>,
+    jupiter_house: usize,
+    moon_house: usize,
+) -> PyResult<Option<Py<PyAny>>> {
     detect_gajakesari(jupiter_house, moon_house)
         .map(|y| yoga_to_dict(py, &y))
         .transpose()
 }
 
 #[pyfunction]
-fn budhaditya_yoga(py: Python<'_>, sun_house: usize, mercury_house: usize) -> PyResult<Option<Py<PyAny>>> {
+fn budhaditya_yoga(
+    py: Python<'_>,
+    sun_house: usize,
+    mercury_house: usize,
+) -> PyResult<Option<Py<PyAny>>> {
     detect_budhaditya(sun_house, mercury_house)
         .map(|y| yoga_to_dict(py, &y))
         .transpose()
@@ -345,7 +359,11 @@ fn vipreeta_raja_yoga(
 }
 
 #[pyfunction]
-fn kemadruma_yoga(py: Python<'_>, moon_house: usize, supporting_planet_houses: Vec<usize>) -> PyResult<Option<Py<PyAny>>> {
+fn kemadruma_yoga(
+    py: Python<'_>,
+    moon_house: usize,
+    supporting_planet_houses: Vec<usize>,
+) -> PyResult<Option<Py<PyAny>>> {
     detect_kemadruma(moon_house, &supporting_planet_houses)
         .map(|y| yoga_to_dict(py, &y))
         .transpose()
@@ -392,5 +410,11 @@ mod tests {
     fn nakshatra_index_validation() {
         assert!(nakshatra_from_index(26).is_ok());
         assert!(nakshatra_from_index(27).is_err());
+    }
+
+    #[test]
+    fn canonical_planet_names_are_bounded() {
+        assert_eq!(canonical_planet_name("Jupiter").unwrap(), "Jupiter");
+        assert!(canonical_planet_name("Pluto").is_err());
     }
 }
