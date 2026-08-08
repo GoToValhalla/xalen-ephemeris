@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'crates/xalen-python/**'
+      - 'crates/xalen-western/**'
       - '.github/workflows/python-enrichment-tests.yml'
 
 permissions:
@@ -25,4 +26,4 @@ jobs:
       - name: Install wheel
         run: python -m pip install --force-reinstall dist/*.whl
       - name: Test enrichment bindings
-        run: pytest -q crates/xalen-python/tests/test_vedic_presentation.py
+        run: pytest -q crates/xalen-python/tests/test_vedic_presentation.py crates/xalen-python/tests/test_western_enrichment.py
