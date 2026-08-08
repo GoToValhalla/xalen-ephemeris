@@ -28,6 +28,8 @@ pub mod midpoints;
 pub mod patterns;
 /// Secondary progressions, solar arc directions.
 pub mod progressions;
+/// Composite and Davison relationship-chart primitives.
+pub mod relationship;
 /// Solar and lunar return charts.
 pub mod returns;
 /// Sabian symbol lookup for each zodiac degree.
