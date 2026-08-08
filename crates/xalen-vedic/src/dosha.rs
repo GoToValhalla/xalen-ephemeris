@@ -1,5 +1,53 @@
 use serde::{Deserialize, Serialize};
 
+pub use xalen_coords::Planet;
+
+/// Traditional (classical, pre-Uranian) ruler of a sidereal rashi.
+///
+/// `sign` is a 0-based sign index (0 = Aries .. 11 = Pisces). Dual-lordship
+/// signs (Scorpio, Aquarius) return only the classical planetary ruler
+/// (Mars, Saturn) — Rahu/Ketu are Jaimini co-lords, not used here since
+/// Pitra Dosha's 9th-lord check is a classical (BPHS-style) reckoning.
+pub fn traditional_sign_lord(sign: usize) -> Planet {
+    match sign % 12 {
+        0 => Planet::Mars,     // Aries
+        1 => Planet::Venus,    // Taurus
+        2 => Planet::Mercury,  // Gemini
+        3 => Planet::Moon,     // Cancer
+        4 => Planet::Sun,      // Leo
+        5 => Planet::Mercury,  // Virgo
+        6 => Planet::Venus,    // Libra
+        7 => Planet::Mars,     // Scorpio
+        8 => Planet::Jupiter,  // Sagittarius
+        9 => Planet::Saturn,   // Capricorn
+        10 => Planet::Saturn,  // Aquarius
+        11 => Planet::Jupiter, // Pisces
+        _ => unreachable!(),
+    }
+}
+
+/// Resolve the real 9th-house (whole-sign) lord's house position from Lagna.
+///
+/// `asc_sign` is the Ascendant's 0-based sign index. `planet_signs` gives the
+/// 0-based sign index of each of the seven classical planets. The 9th house
+/// sign is 8 signs forward of the Ascendant (whole-sign houses); its
+/// traditional ruler's own whole-sign house from Lagna is returned.
+///
+/// Returns `None` if `planet_signs` does not contain the resolved ruler
+/// (should not happen when all seven classical planets are supplied).
+pub fn resolve_ninth_lord_house(
+    asc_sign: usize,
+    planet_signs: &[(Planet, usize)],
+) -> Option<usize> {
+    let ninth_sign = (asc_sign + 8) % 12;
+    let lord = traditional_sign_lord(ninth_sign);
+    let lord_sign = planet_signs
+        .iter()
+        .find(|(p, _)| *p == lord)
+        .map(|(_, s)| *s)?;
+    Some((lord_sign + 12 - asc_sign % 12) % 12 + 1)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dosha {
     pub name: &'static str,
@@ -196,9 +244,14 @@ pub fn detect_pitra_dosha(
     sun_house: usize,
     saturn_house: usize,
     rahu_house: usize,
-    _ninth_lord_house: usize,
+    ninth_lord_house: usize,
     ninth_lord_debilitated: bool,
 ) -> Dosha {
+    // Dusthana houses (6, 8, 12 from Lagna) are classically the houses of
+    // affliction; the 9th lord (Pitri-karaka house lord) placed there is a
+    // recognized Pitra Dosha trigger independent of debilitation.
+    const DUSTHANA: [usize; 3] = [6, 8, 12];
+
     let mut triggers = Vec::new();
 
     if sun_house == 9 && saturn_house == 9 {
@@ -209,6 +262,9 @@ pub fn detect_pitra_dosha(
     }
     if ninth_lord_debilitated {
         triggers.push("9th lord debilitated");
+    }
+    if DUSTHANA.contains(&ninth_lord_house) {
+        triggers.push("9th lord in a dusthana (6th/8th/12th house)");
     }
     if saturn_house == 9 {
         triggers.push("Saturn in 9th house");
@@ -432,6 +488,150 @@ mod tests {
     fn pitra_dosha_rahu_in_9th() {
         let d = detect_pitra_dosha(1, 4, 9, 5, false);
         assert!(d.present);
+    }
+
+    // -----------------------------------------------------------------------
+    // 9th-lord resolution tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn traditional_sign_lord_exhaustive_table() {
+        let expected = [
+            (0, Planet::Mars),     // Aries
+            (1, Planet::Venus),    // Taurus
+            (2, Planet::Mercury),  // Gemini
+            (3, Planet::Moon),     // Cancer
+            (4, Planet::Sun),      // Leo
+            (5, Planet::Mercury),  // Virgo
+            (6, Planet::Venus),    // Libra
+            (7, Planet::Mars),     // Scorpio
+            (8, Planet::Jupiter),  // Sagittarius
+            (9, Planet::Saturn),   // Capricorn
+            (10, Planet::Saturn),  // Aquarius
+            (11, Planet::Jupiter), // Pisces
+        ];
+        for (sign, planet) in expected {
+            assert_eq!(
+                traditional_sign_lord(sign),
+                planet,
+                "sign {sign} must be ruled by {planet:?}"
+            );
+        }
+    }
+
+    /// Standard 7-classical-planet sign layout used by the fixtures below.
+    /// (Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn) sign indices.
+    fn planet_signs(signs: [usize; 7]) -> Vec<(Planet, usize)> {
+        let planets = [
+            Planet::Sun,
+            Planet::Moon,
+            Planet::Mars,
+            Planet::Mercury,
+            Planet::Jupiter,
+            Planet::Venus,
+            Planet::Saturn,
+        ];
+        planets.into_iter().zip(signs).collect()
+    }
+
+    #[test]
+    fn ninth_lord_house_resolves_correctly_for_aries_ascendant() {
+        // Asc = Aries (0) → 9th sign = Sagittarius (8) → ruler Jupiter.
+        // Jupiter placed in Cancer (3) → house from Lagna = 4.
+        let signs = planet_signs([0, 0, 0, 0, 3, 0, 0]);
+        let house = resolve_ninth_lord_house(0, &signs).unwrap();
+        assert_eq!(house, 4);
+    }
+
+    #[test]
+    fn ninth_lord_house_resolves_correctly_for_virgo_ascendant() {
+        // Asc = Virgo (5) → 9th sign = Taurus (1) → ruler Venus.
+        // Venus placed in Gemini (2) → house from Lagna = 10.
+        let signs = planet_signs([0, 0, 0, 0, 0, 2, 0]);
+        let house = resolve_ninth_lord_house(5, &signs).unwrap();
+        assert_eq!(house, 10);
+    }
+
+    #[test]
+    fn ninth_lord_house_differs_across_ascendants() {
+        // Same planetary sign placements, different ascendants must generally
+        // resolve to a different lord and a different house.
+        let signs = planet_signs([1, 4, 7, 2, 9, 6, 11]);
+        let house_aries = resolve_ninth_lord_house(0, &signs).unwrap(); // 9th=Sagittarius->Jupiter@sign9
+        let house_cancer = resolve_ninth_lord_house(3, &signs).unwrap(); // 9th=Pisces->Jupiter@sign9
+        let house_libra = resolve_ninth_lord_house(6, &signs).unwrap(); // 9th=Gemini->Mercury@sign2
+        assert_ne!(house_aries, house_libra);
+        assert_ne!(house_cancer, house_libra);
+    }
+
+    #[test]
+    fn regression_saturn_is_not_implicitly_the_ninth_lord() {
+        // Asc = Cancer (3) → 9th sign = Pisces (11) → real ruler is Jupiter,
+        // NOT Saturn. The old placeholder used Saturn's own house as a stand-in
+        // for the 9th-lord house; construct a chart where Saturn sits in a
+        // dusthana (would have wrongly triggered "9th lord in dusthana") while
+        // the real 9th lord (Jupiter) does NOT, proving the old shortcut would
+        // have produced a false positive that the real resolution avoids.
+        let signs_saturn_dusthana = planet_signs([0, 0, 0, 0, 3, 0, /* Saturn */ 8]);
+        // Saturn sign 8, Asc sign 3 -> Saturn house = (8-3)%12+1 = 6 (dusthana).
+        let saturn_house = (8 + 12 - 3) % 12 + 1;
+        assert_eq!(saturn_house, 6, "sanity: Saturn's own house is a dusthana");
+
+        // Real 9th lord (Jupiter, sign 3) house from Lagna = (3-3)%12+1 = 1 (not dusthana).
+        let real_ninth_lord_house = resolve_ninth_lord_house(3, &signs_saturn_dusthana).unwrap();
+        assert_eq!(
+            real_ninth_lord_house, 1,
+            "real 9th lord (Jupiter) house must be 1, not Saturn's house (6)"
+        );
+        assert_ne!(
+            real_ninth_lord_house, saturn_house,
+            "the real 9th-lord house must differ from Saturn's own house in this chart"
+        );
+
+        // Using the OLD placeholder (Saturn's own house) as ninth_lord_house
+        // wrongly triggers the dusthana condition:
+        let d_old_placeholder = detect_pitra_dosha(1, saturn_house, 2, saturn_house, false);
+        assert!(
+            d_old_placeholder.present,
+            "old Saturn-substitution placeholder would wrongly flag Pitra Dosha here"
+        );
+
+        // Using the REAL resolved 9th-lord house correctly does NOT trigger it
+        // (Saturn is not in the 9th house either, so no other trigger fires):
+        let d_real = detect_pitra_dosha(1, saturn_house, 2, real_ninth_lord_house, false);
+        assert!(
+            !d_real.present,
+            "real 9th-lord resolution must NOT flag Pitra Dosha in this chart"
+        );
+    }
+
+    #[test]
+    fn pitra_dosha_positive_ninth_lord_in_dusthana() {
+        // 9th lord placed in the 8th house (dusthana) genuinely triggers.
+        let d = detect_pitra_dosha(1, 2, 3, 8, false);
+        assert!(d.present);
+        assert!(
+            d.cancellations.iter().any(|c| c.contains("dusthana")),
+            "trigger reason must cite the dusthana placement"
+        );
+    }
+
+    #[test]
+    fn pitra_dosha_negative_no_affliction() {
+        // No affliction: Sun/Saturn not in 9th, Rahu not in 9th, 9th lord
+        // in a benign house (5th), not debilitated.
+        let d = detect_pitra_dosha(2, 3, 4, 5, false);
+        assert!(!d.present);
+        assert_eq!(d.severity, DoshaSeverity::None);
+    }
+
+    #[test]
+    fn pitra_dosha_deterministic_repeatability() {
+        let d1 = detect_pitra_dosha(1, 4, 9, 6, true);
+        let d2 = detect_pitra_dosha(1, 4, 9, 6, true);
+        assert_eq!(d1.present, d2.present);
+        assert_eq!(d1.severity, d2.severity);
+        assert_eq!(d1.cancellations, d2.cancellations);
     }
 
     #[test]

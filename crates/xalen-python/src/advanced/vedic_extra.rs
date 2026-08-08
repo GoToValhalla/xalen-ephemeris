@@ -23,7 +23,8 @@ use xalen_vedic::ashtottari::ashtottari_dasha as core_ashtottari_dasha;
 use xalen_vedic::compatibility::ashtakoota_match;
 use xalen_vedic::dasha::DashaPeriod;
 use xalen_vedic::dosha::{
-    Dosha, detect_kaal_sarpa, detect_mangal_dosha, detect_pitra_dosha,
+    Dosha, Planet, detect_kaal_sarpa, detect_mangal_dosha, detect_pitra_dosha,
+    resolve_ninth_lord_house,
 };
 use xalen_vedic::nakshatra::Nakshatra;
 use xalen_vedic::rashi::Rashi;
@@ -288,6 +289,38 @@ fn kaal_sarpa_dosha(
     dosha_to_dict(py, &detect_kaal_sarpa(rahu_house, ketu_house, &planet_houses))
 }
 
+/// Resolve the real 9th-house lord's whole-sign house position from Lagna.
+///
+/// `asc_sign` and the seven `*_sign` arguments are 0-based sign indices
+/// (0 = Aries .. 11 = Pisces) in whatever sidereal zodiac the caller's chart
+/// already uses. Used as the `ninth_lord_house` input to [`pitra_dosha`] —
+/// callers no longer need to fake this value.
+#[pyfunction]
+#[pyo3(signature = (asc_sign, sun_sign, moon_sign, mars_sign, mercury_sign, jupiter_sign, venus_sign, saturn_sign))]
+#[allow(clippy::too_many_arguments)]
+fn ninth_lord_house(
+    asc_sign: usize,
+    sun_sign: usize,
+    moon_sign: usize,
+    mars_sign: usize,
+    mercury_sign: usize,
+    jupiter_sign: usize,
+    venus_sign: usize,
+    saturn_sign: usize,
+) -> PyResult<usize> {
+    let planet_signs = [
+        (Planet::Sun, sun_sign),
+        (Planet::Moon, moon_sign),
+        (Planet::Mars, mars_sign),
+        (Planet::Mercury, mercury_sign),
+        (Planet::Jupiter, jupiter_sign),
+        (Planet::Venus, venus_sign),
+        (Planet::Saturn, saturn_sign),
+    ];
+    resolve_ninth_lord_house(asc_sign, &planet_signs)
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("could not resolve 9th lord house"))
+}
+
 #[pyfunction]
 fn pitra_dosha(
     py: Python<'_>,
@@ -378,6 +411,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mangal_dosha, m)?)?;
     m.add_function(wrap_pyfunction!(kaal_sarpa_dosha, m)?)?;
     m.add_function(wrap_pyfunction!(pitra_dosha, m)?)?;
+    m.add_function(wrap_pyfunction!(ninth_lord_house, m)?)?;
     m.add_function(wrap_pyfunction!(pancha_mahapurusha_yoga, m)?)?;
     m.add_function(wrap_pyfunction!(gajakesari_yoga, m)?)?;
     m.add_function(wrap_pyfunction!(budhaditya_yoga, m)?)?;
