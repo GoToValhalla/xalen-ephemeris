@@ -26,3 +26,6 @@ __pycache__/
 
 # wasm-pack output
 /crates/xalen-wasm/pkg/
+
+# Compiled Python extension modules (built locally via `maturin develop`)
+*.so
