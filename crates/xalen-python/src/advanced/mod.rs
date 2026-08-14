@@ -1,15 +1,27 @@
-//! Composite Python binding module for advanced XALEN capabilities.
-//!
-//! `core` preserves the validated Tarot-project bindings for DE440, aspects,
-//! transits, synastry, returns, progressions, vargas and Vimshottari dasha.
-//! `vedic_extra` and `presentation` extend that surface without changing the
-//! top-level `lib.rs` registration contract (`advanced::register`).
-//! `western_enrichment` exposes existing advanced Western Rust-core techniques.
+// Copyright 2024-2026 XALEN Technology Pvt Ltd
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-// The original validated advanced binding file predates the repository's
-// current rustfmt output. Keep it byte-identical while we compose it here.
 #[rustfmt::skip]
 mod core;
+#[rustfmt::skip]
+mod product;
+#[rustfmt::skip]
+mod product_astronomy;
+#[rustfmt::skip]
+mod product_objects;
+#[rustfmt::skip]
+mod product_vedic_extended;
 #[rustfmt::skip]
 mod presentation;
 #[rustfmt::skip]
@@ -24,5 +36,9 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     vedic_extra::register(m)?;
     presentation::register(m)?;
     western_enrichment::register(m)?;
+    product::register(m)?;
+    product_astronomy::register(m)?;
+    product_objects::register(m)?;
+    product_vedic_extended::register(m)?;
     Ok(())
 }

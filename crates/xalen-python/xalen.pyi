@@ -42,13 +42,22 @@ def stations(body_id: int, jd_start: float, jd_end: float, step_days: float = ..
 def solar_eclipses(jd_start: float, jd_end: float) -> List[Dict[str, Any]]: ...
 def lunar_eclipses(jd_start: float, jd_end: float) -> List[Dict[str, Any]]: ...
 
+# Product-oriented JSON surface. These wrappers preserve exact Rust result
+# schemas while keeping Python/Telegram code decoupled from Rust structs.
+def product_capabilities_json() -> str: ...
+def product_equatorial_json(body: str, jd: float) -> str: ...
+def product_solar_day_json(jd_start: float, latitude: float, longitude: float, elevation_m: float = ...) -> str: ...
+def product_special_objects_json(jd: float) -> str: ...
+def product_western_json(mode: str, payload_json: str) -> str: ...
+def product_vedic_json(mode: str, payload_json: str) -> str: ...
+def product_vedic_extended_json(mode: str, payload_json: str) -> str: ...
+def product_chinese_json(system: str, payload_json: str) -> str: ...
+def product_world_json(system: str, payload_json: str) -> str: ...
+def product_iching_json(year: int, month: int, day: int, hour: int) -> str: ...
+def product_lalkitab_json(payload_json: str) -> str: ...
+
 # ---------------------------------------------------------------------------
 # Configurable-orb aspect engine + pattern detection (src/aspect_engine.rs).
-# All 14 aspect types (major, minor, Kepler), configurable per-type orbs,
-# strength, applying/separating/exact phase, out-of-sign detection, and the
-# 7 aspect patterns (T-Square, Grand Trine, Grand Cross, Yod, Kite, Mystic
-# Rectangle, Stellium). Additive alongside `aspects`/`synastry`/`transits`
-# in xalen_base.pyi, which are unchanged.
 # ---------------------------------------------------------------------------
 
 def aspects_ex(
@@ -60,35 +69,12 @@ def aspects_ex(
     out_of_sign_penalty: float | None = ...,
     minimum_strength: float | None = ...,
     include_applying: bool | None = ...,
-) -> List[Dict[str, Any]]:
-    """Configurable-orb aspect detection across all 14 aspect types.
+) -> List[Dict[str, Any]]: ...
 
-    positions: {name: (longitude_deg, speed_deg_per_day_or_None)}.
-    aspect_types: names from `aspect_type_names()`; default = the 5 Ptolemaic
-    majors (same default as `aspects()`). orbs: per-type overrides in
-    degrees, keyed by the same names.
-
-    Returns a list of {"body1", "body2", "aspect_type", "angle_deg",
-    "separation_deg", "deviation_deg", "orb_deg", "strength", "phase",
-    "is_out_of_sign", "is_major", "is_kepler"}. "phase" is one of
-    "applying"/"separating"/"exact"/None.
-    """
-    ...
-
-def aspect_type_names() -> List[str]:
-    """The 14 aspect-type name strings accepted by `aspects_ex`/`aspect_patterns`."""
-    ...
+def aspect_type_names() -> List[str]: ...
 
 def aspect_patterns(
     positions: Dict[str, tuple[float, float | None]],
     aspect_types: List[str] | None = ...,
     orbs: Dict[str, float] | None = ...,
-) -> List[Dict[str, Any]]:
-    """Detect T-Square/Grand Trine/Grand Cross/Yod/Kite/Mystic Rectangle/
-    Stellium patterns among the given positions. aspect_types defaults to
-    all 14 types (patterns need minor aspects like quincunx/sextile).
-
-    Returns a list of {"pattern_type", "bodies", "description", "aspects"}
-    where "aspects" is a list of dicts shaped like `aspects_ex`'s output.
-    """
-    ...
+) -> List[Dict[str, Any]]: ...
