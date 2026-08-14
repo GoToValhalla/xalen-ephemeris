@@ -14,13 +14,14 @@
 
 #[rustfmt::skip]
 mod core;
+mod product;
+mod product_vedic_extended;
 #[rustfmt::skip]
 mod presentation;
 #[rustfmt::skip]
 mod vedic_extra;
 #[path = "../western_enrichment.rs"]
 mod western_enrichment;
-mod product;
 
 use pyo3::prelude::*;
 
@@ -30,5 +31,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     presentation::register(m)?;
     western_enrichment::register(m)?;
     product::register(m)?;
+    product_vedic_extended::register(m)?;
     Ok(())
 }
