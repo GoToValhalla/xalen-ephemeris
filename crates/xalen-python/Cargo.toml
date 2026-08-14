@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Python bindings (PyO3) for XALEN Ephemeris — pip install xalen"
-keywords = ["python", "ephemeris", "astrology", "pyo3", "astronomy"]
+keywords = ["python", "ephemeris", "astrology", "astronomy", "pyo3"]
 categories = ["science", "api-bindings"]
 
 [lib]
@@ -30,6 +30,8 @@ doctest = false
 # only uses the stable-ABI subset (PyDict / PyList / PyAny via the Bound API),
 # so abi3 is sound here.
 pyo3 = { version = "0.29", features = ["abi3-py38"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 xalen-ephem = { version = "0.6.0", path = "../xalen-ephem", default-features = false }
 xalen-time = { version = "0.6.0", path = "../xalen-time" }
 xalen-ayanamsa = { version = "0.6.0", path = "../xalen-ayanamsa" }
@@ -40,6 +42,10 @@ xalen-western = { version = "0.6.0", path = "../xalen-western", default-features
 xalen-numerology = { version = "0.6.0", path = "../xalen-numerology" }
 xalen-coords = { version = "0.6.0", path = "../xalen-coords" }
 xalen-chart = { version = "0.6.0", path = "../xalen-chart" }
+xalen-chinese = { version = "0.6.0", path = "../xalen-chinese" }
+xalen-world = { version = "0.6.0", path = "../xalen-world" }
+xalen-iching = { version = "0.6.0", path = "../xalen-iching" }
+xalen-lalkitab = { version = "0.6.0", path = "../xalen-lalkitab" }
 
 [features]
 # Default-on passthrough for the non-commercial Hipparcos fixed-star catalog.
