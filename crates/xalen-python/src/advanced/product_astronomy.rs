@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 use serde_json::json;
 use xalen_ephem::{Almanac, Body};
-use xalen_time::JdUT1;
+use xalen_time::{JdUT1, JulianDay};
 
 fn value_error(message: impl Into<String>) -> PyErr {
     pyo3::exceptions::PyValueError::new_err(message.into())
