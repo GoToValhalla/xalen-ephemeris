@@ -14,7 +14,11 @@
 
 #[rustfmt::skip]
 mod core;
+#[rustfmt::skip]
 mod product;
+#[rustfmt::skip]
+mod product_astronomy;
+#[rustfmt::skip]
 mod product_vedic_extended;
 #[rustfmt::skip]
 mod presentation;
@@ -31,6 +35,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     presentation::register(m)?;
     western_enrichment::register(m)?;
     product::register(m)?;
+    product_astronomy::register(m)?;
     product_vedic_extended::register(m)?;
     Ok(())
 }
