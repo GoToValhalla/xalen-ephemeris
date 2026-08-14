@@ -37,6 +37,18 @@ def test_solar_day_product_binding_returns_ordered_real_events():
     assert result["rise_jd"] < result["transit_jd"] < result["set_jd"]
 
 
+def test_special_objects_surface_is_deterministic_and_complete():
+    first = _load(xalen.product_special_objects_json(2451545.0))
+    second = _load(xalen.product_special_objects_json(2451545.0))
+    assert first == second
+    lilith = first["black_moon_lilith"]
+    assert 0.0 <= lilith["mean_longitude_deg"] < 360.0
+    assert 0.0 <= lilith["true_longitude_deg"] < 360.0
+    assert 0.0 <= lilith["priapus_longitude_deg"] < 360.0
+    assert len(first["asteroids"]) == 15
+    assert {row["name"] for row in first["asteroids"]} >= {"Ceres", "Pallas", "Juno", "Vesta", "Eris"}
+
+
 def test_product_world_and_chinese_surfaces_return_real_results():
     bazi = _load(xalen.product_chinese_json("bazi", json.dumps({
         "year": 2024, "jd": 2460370.5, "hour": 12.0
