@@ -27,6 +27,16 @@ def test_equatorial_product_binding_is_deterministic_and_finite():
     assert 0.0 <= first["gast_deg"] < 360.0
 
 
+def test_solar_day_product_binding_returns_ordered_real_events():
+    result = _load(xalen.product_solar_day_json(2460676.5, 48.8566, 2.3522, 35.0))
+    assert result["always_above"] is False
+    assert result["always_below"] is False
+    assert result["rise_jd"] is not None
+    assert result["transit_jd"] is not None
+    assert result["set_jd"] is not None
+    assert result["rise_jd"] < result["transit_jd"] < result["set_jd"]
+
+
 def test_product_world_and_chinese_surfaces_return_real_results():
     bazi = _load(xalen.product_chinese_json("bazi", json.dumps({
         "year": 2024, "jd": 2460370.5, "hour": 12.0
@@ -60,3 +70,14 @@ def test_product_western_and_vedic_surfaces_are_deterministic():
     assert 1 <= kp["kp_number"] <= 249
     gandanta = _load(xalen.product_vedic_json("gandanta", json.dumps({"degree": 120.5})))
     assert gandanta["in_gandanta"] is True
+
+
+def test_extended_jyotish_product_surface_is_callable_and_deterministic():
+    payload = json.dumps({"degree": 83.25})
+    first = _load(xalen.product_vedic_extended_json("pushkara", payload))
+    second = _load(xalen.product_vedic_extended_json("pushkara", payload))
+    assert first == second
+
+    upagraha = _load(xalen.product_vedic_extended_json("upagraha", json.dumps({"sun_sidereal": 42.0})))
+    assert isinstance(upagraha, list)
+    assert len(upagraha) > 0
