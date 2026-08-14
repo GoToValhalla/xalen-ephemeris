@@ -61,6 +61,52 @@ fn to_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
     serde_json::to_string(value).map_err(|e| value_error(format!("serialization failed: {e}")))
 }
 
+fn classical_lord_name(sign: usize) -> &'static str {
+    match sign % 12 {
+        0 | 7 => "Mars",
+        1 | 6 => "Venus",
+        2 | 5 => "Mercury",
+        3 => "Moon",
+        4 => "Sun",
+        8 | 11 => "Jupiter",
+        9 | 10 => "Saturn",
+        _ => unreachable!(),
+    }
+}
+
+fn chara_lord_positions(value: &Value) -> PyResult<Vec<(Rashi, Rashi)>> {
+    let rows = value
+        .get("planet_positions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| value_error("missing planet_positions array"))?;
+    let mut longitudes: HashMap<String, f64> = HashMap::new();
+    for row in rows {
+        let name = row
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| value_error("planet_positions entry is missing name"))?;
+        let longitude = row
+            .get("longitude")
+            .and_then(Value::as_f64)
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| value_error("planet_positions entry has invalid longitude"))?;
+        longitudes.insert(name.to_ascii_lowercase(), longitude.rem_euclid(360.0));
+    }
+    (0..12)
+        .map(|sign| {
+            let lord = classical_lord_name(sign);
+            let longitude = longitudes
+                .get(&lord.to_ascii_lowercase())
+                .copied()
+                .ok_or_else(|| value_error(format!("planet_positions is missing {lord}")))?;
+            Ok((
+                Rashi::from_index(sign),
+                Rashi::from_index((longitude / 30.0).floor() as usize),
+            ))
+        })
+        .collect()
+}
+
 /// Product bindings for Jyotish techniques not present in the legacy Python
 /// API. `mode` selects a Rust technique and `payload_json` supplies only its
 /// canonical numerical inputs.
@@ -129,27 +175,7 @@ fn product_vedic_extended_json(mode: &str, payload_json: &str) -> PyResult<Strin
         "chara_dasha" => {
             let lagna = Rashi::from_index(int_field(&value, "lagna_sign")?.rem_euclid(12) as usize);
             let birth_jd = f64_field(&value, "birth_jd")?;
-            let raw = value
-                .get("lord_positions")
-                .and_then(Value::as_array)
-                .ok_or_else(|| value_error("missing lord_positions array"))?;
-            let mut positions = Vec::with_capacity(raw.len());
-            for pair in raw {
-                let parts = pair
-                    .as_array()
-                    .filter(|p| p.len() == 2)
-                    .ok_or_else(|| value_error("lord_positions entries must be [sign, lord_sign]"))?;
-                let sign = parts[0]
-                    .as_i64()
-                    .ok_or_else(|| value_error("invalid sign in lord_positions"))?;
-                let lord_sign = parts[1]
-                    .as_i64()
-                    .ok_or_else(|| value_error("invalid lord sign in lord_positions"))?;
-                positions.push((
-                    Rashi::from_index(sign.rem_euclid(12) as usize),
-                    Rashi::from_index(lord_sign.rem_euclid(12) as usize),
-                ));
-            }
+            let positions = chara_lord_positions(&value)?;
             to_json(&xalen_vedic::chara_dasha::compute_chara_dasha(lagna, &positions, birth_jd))
         }
         "sthira_dasha" => to_json(&xalen_vedic::chara_dasha::compute_sthira_dasha(
